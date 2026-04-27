@@ -1,0 +1,46 @@
+# Maven
+target/
+*.class
+*.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+
+# IDE — IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# IDE — Eclipse
+.classpath
+.project
+.settings/
+.factorypath
+
+# IDE — VS Code
+.vscode/
+
+# Spring Boot
+spring-boot-*.jar
+
+# Entorno (¡nunca commitear credenciales!)
+.env
+
+# Docker
+.docker/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,201 @@
+version: '3.8'
+
+services:
+
+  # ─── Infraestructura ──────────────────────────────────────────
+  postgres:
+    image: postgres:14
+    container_name: narratext-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - narratext-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  edge-tts-http:
+    build: ./edge-tts-http
+    container_name: narratext-edge-tts
+    ports:
+      - "5000:5000"
+    environment:
+      EDGE_TTS_VOICE: ${EDGE_TTS_VOICE:-es-MX-DaliaNeural}
+    networks:
+      - narratext-network
+    restart: unless-stopped
+
+  # ─── Microservicios de plataforma ─────────────────────────────
+  discovery-service:
+    build: ./discovery-service
+    container_name: narratext-discovery
+    ports:
+      - "8760:8760"
+    networks:
+      - narratext-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8760/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  gateway-service:
+    build: ./gateway-service
+    container_name: narratext-gateway
+    ports:
+      - "8820:8820"
+    environment:
+      EUREKA_URI: http://discovery-service:8760/eureka
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+    networks:
+      - narratext-network
+    restart: unless-stopped
+
+  # ─── Microservicios de negocio ────────────────────────────────
+  auth-service:
+    build: ./auth-service
+    container_name: narratext-auth
+    ports:
+      - "8821:8821"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      EUREKA_URI: http://discovery-service:8760/eureka
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-86400000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    networks:
+      - narratext-network
+    restart: unless-stopped
+
+  library-service:
+    build: ./library-service
+    container_name: narratext-library
+    ports:
+      - "8830:8830"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/library_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      EUREKA_URI: http://discovery-service:8760/eureka
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    networks:
+      - narratext-network
+    restart: unless-stopped
+
+  tts-service:
+    build: ./tts-service
+    container_name: narratext-tts
+    ports:
+      - "8832:8832"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/tts_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      EUREKA_URI: http://discovery-service:8760/eureka
+      JWT_SECRET: ${JWT_SECRET}
+      EDGE_TTS_BASE_URL: http://edge-tts-http:5000
+      TTS_CACHE_DIR: /data/tts-cache
+      TTS_DEFAULT_VOICE: ${EDGE_TTS_VOICE:-es-MX-DaliaNeural}
+      TTS_DEFAULT_RATE: "1.0"
+    volumes:
+      - tts-cache:/data/tts-cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      edge-tts-http:
+        condition: service_started
+    networks:
+      - narratext-network
+    restart: unless-stopped
+
+  reading-service:
+    build: ./reading-service
+    container_name: narratext-reading
+    ports:
+      - "8831:8831"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/reading_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      EUREKA_URI: http://discovery-service:8760/eureka
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    networks:
+      - narratext-network
+    restart: unless-stopped
+
+  social-service:
+    build: ./social-service
+    container_name: narratext-social
+    ports:
+      - "8833:8833"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/social_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      EUREKA_URI: http://discovery-service:8760/eureka
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    networks:
+      - narratext-network
+    restart: unless-stopped
+
+  notification-service:
+    build: ./notification-service
+    container_name: narratext-notification
+    ports:
+      - "8834:8834"
+    environment:
+      EUREKA_URI: http://discovery-service:8760/eureka
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USER: ${MAIL_USER}
+      MAIL_PASS: ${MAIL_PASS}
+      MAIL_FROM: ${MAIL_FROM}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+    networks:
+      - narratext-network
+    restart: unless-stopped
+
+networks:
+  narratext-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  tts-cache:
